@@ -26,6 +26,8 @@ if [ $(az group exists --name $2) = true ]
         echo creating Resource Group $2 in region $location
         rg_output=$(jq -r .id <<< "$(az group create --name $2 --location $location)")
         subs_id=$(echo $rg_output | cut -d/ -f3)
+        # create cannot delete lock for the reosurce group
+        # az group lock create --lock-type CanNotDelete -n $2-lock -g $2
 fi
 
 if [[ $(az ad sp list --display-name $1) != '[]' ]]
