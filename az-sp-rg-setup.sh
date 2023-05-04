@@ -1,8 +1,9 @@
 #!/bin/bash
-# Check 3 arguments are passed with the script
+# Check 2 arguments are passed with the script
 
 if [ $# -ne 2 ]; then
-    echo "Usage : $0 SP_name RG_name RG_location"
+    clear
+    echo "Usage : $0 SP_name RG_name"
     echo
     echo "This script requires two arguments"
     echo "The first argument - display name of the Azure service principal (tf-np-sp-xxx-VS-AD)"
