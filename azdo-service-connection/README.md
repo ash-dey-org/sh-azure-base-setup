@@ -1,0 +1,17 @@
+### Setup of service connection in Azure DEVOPS project.
+
+</br>
+##### script usage:
+<script_name> <app_client_id> <az_subs_id> <az_subs_name> <tenant_id> <svc_connection_name> <az_devops_prj_name>
+</br>
+##### More information
+This script will add an azurerm service connection to azure devops project
+This script requires 6 arguments
+
+Use double quote if there is a space in names e.g. "IT Non-Production" or "Reader Room"
+
+</br>
+##### Dependency:
+you must define the following env variables before excuting the script
+export AZDO_ORG_SERVICE_URL="https://dev.azure.com/xxx/"
+export AZDO_PERSONAL_ACCESS_TOKEN="xxx"
