@@ -13,8 +13,7 @@ Use double quote if there is a space in names e.g. "IT Non-Production" or "Reade
 
 
 ##### Dependency:
-you must define the following env variables before excuting the script
+you must login to azure devops using cli before executing the script, it will prompt for PAT
 ```
-export AZDO_ORG_SERVICE_URL="https://dev.azure.com/xxx/"
-export AZDO_PERSONAL_ACCESS_TOKEN="xxx"
+az devops login --organization https://dev.azure.com/xxx
 ```

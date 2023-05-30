@@ -10,10 +10,8 @@ if [ $# -ne 6 ]; then
     echo
     echo "Use double quote if there is a space in names e.g. \"IT Non-Production\" or \"Reader Room\""
     echo
-    echo "you must define the following env before excuting the script"
-    echo "export AZDO_ORG_SERVICE_URL=\"https://dev.azure.com/xxx/\""
-    echo "export AZDO_PERSONAL_ACCESS_TOKEN=\"xxx\""
-    echo
+    echo "you must login to azure devop"
+    echo "az devops login --organization https://dev.azure.com/xxx"
 
     exit 0
 fi
@@ -29,6 +27,6 @@ if [ "$prj_name" != "$6" ];
         exit 0
 
     else
-        echo "Project $6 exisits, provide more input for the service connection"
-        # az devops service-endpoint azurerm create --azure-rm-service-principal-id "$1" --azure-rm-subscription-id "$2" --azure-rm-subscription-name "$3" --azure-rm-tenant-id "$4" --name "$5" --project $6"
+        # echo "Project $6 exisits, provide more input for the service connection"
+        az devops service-endpoint azurerm create --azure-rm-service-principal-id "$1" --azure-rm-subscription-id "$2" --azure-rm-subscription-name "$3" --azure-rm-tenant-id "$4" --name "$5" --project "$6"
 fi

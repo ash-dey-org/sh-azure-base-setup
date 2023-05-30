@@ -4,19 +4,22 @@
 ## TO DO
 ## why role assignment of the RG not lisitng correctly
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 4 ]; then
     clear
-    echo "Usage : $0 SP_name RG_name"
+    echo "Usage : $0 SP_name RG_name tfc_prj_name tfc_workspace_name"
     echo
-    echo "This script requires 2 arguments"
-    echo "creates az RG, creates aad SP, assigns permission"
+    echo "This script requires 4 arguments"
+    echo "creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
     echo
     echo "1. Display name of the Azure service principal (e.g. tf-np-sp-xxx-VS-AD)"
     echo "2. Name of the Azure resource group (e.g. IT-DEV-XXX-RG)"
+    echo "3. Terraform cloud app-project name (e.g. prj-xxx-xxx)"
+    echo "4. Terraform cloud app-workspace name (e.g. xxx-xxx-dev)"
     echo
     echo "if the resource group already exists, it will assign SP contributor role to RG"
     echo "if the resource group does not exist, then it will create resources and assign permission"
     echo
+    echo "requires environemnt variable TF_CLOUD_ORGANIZATION"
     echo "requires default subscription set (az account set --subscription xxxx)"
     exit 0
 fi
@@ -65,4 +68,65 @@ if [[ $(az ad sp list --display-name $1) != '[]' ]]
         az ad sp create-for-rbac -n $1 --role Contributor --scopes /subscriptions/$subs_id/resourceGroups/$2
 fi
 
+
+fc_name_plan="fc-$2-plan"
+fc_name_apply="fc-$2-apply"
+fc_desc="Terraform Federated credential for SP $1"
+issuer="https://app.terraform.io"
+subject_plan="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:plan"
+subject_apply="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:apply"
+audiences='["api://AzureADTokenExchange"]'
+
+
+# set parameters for terraform run phase plan
+plan=$(cat <<EOL
+{
+    "name": "$fc_name_plan",
+    "issuer": "$issuer",
+    "subject": "$subject_plan",
+    "description": "$fc_desc plan",
+    "audiences": $audiences
+}
+EOL
+)
+
+# set parameters for terraform run phase apply
+apply=$(cat <<EOL
+{
+    "name": "$fc_name_apply",
+    "issuer": "$issuer",
+    "subject": "$subject_apply",
+    "description": "$fc_desc apply",
+    "audiences": $audiences
+}
+EOL
+)
+
+objId=$(jq -r .[].appId <<< "$(az ad sp list --display-name $1)")
+json_array=$(az ad app federated-credential list --id $objId)
+
+fc_id_plan=$(echo "$json_array" | jq  --arg fc_name_plan "$fc_name_plan" '.[] | select(.name == $fc_name_plan) | .name')
+
+#check if the federated credential already exists for plan
+if [[ $fc_id_plan != "\"$fc_name_plan\"" ]]
+    then
+        echo "Creating federated ceredential $fc_name_plan"
+        az ad app federated-credential create --id $objId --parameters "$plan"
+
+    else
+        echo "Federated Credential $fc_name_plan exists, skipping step...."
+fi
+
+
+fc_id_apply=$(echo "$json_array" | jq  --arg fc_name_apply "$fc_name_apply" '.[] | select(.name == $fc_name_apply) | .name')
+
+#check if the federated credential already exists for apply
+if [[ $fc_id_apply != "\"$fc_name_apply\"" ]]
+    then
+        echo "Creating federated ceredential $fc_name_apply"
+        az ad app federated-credential create --id $objId --parameters "$apply"
+    else
+        echo "Federated Credential $fc_name_apply exists, skipping step...."
+
+fi
 

@@ -11,8 +11,9 @@ Creates Service Principal (rbac), if it does not exist already.
 Assigns contributor role to service principal to the resource group.
 
 ##### Dependency:
-Requires log into azure subscription using az cli before running the script
+Requires export terrafrom cloud organisation (if creating federated credential for terraform) and log into azure subscription using az cli before running the script
 ```
+$ export TF_CLOUD_ORGANIZATION="xxx"
 $ az login
 $ az account set --subscription <subs_id>
 ```
