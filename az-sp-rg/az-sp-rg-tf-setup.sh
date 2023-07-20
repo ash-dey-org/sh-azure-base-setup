@@ -8,6 +8,7 @@ if [ $# -ne 4 ]; then
     clear
     echo "Usage : $0 SP_name RG_name tfc_prj_name tfc_workspace_name"
     echo
+    echo "Assumption: environment variable TF_CLOUD_ORGANIZATION is avilable"
     echo "This script requires 4 arguments"
     echo "creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
     echo
