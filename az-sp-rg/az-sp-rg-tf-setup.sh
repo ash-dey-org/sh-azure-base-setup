@@ -38,8 +38,11 @@ if [ $(az group exists --name $2) = true ]
     else
         echo "Resource Group $2 does not exist"
         read -p "Enter the Azure region (AustraliaEast|AustraliaSouthEast) to create resource group: " location
+        read -p "Enter the tag for Environment: " environment
+        read -p "Enter the tag for App name: " app
+        read -p "Enter the tag for Owner: " owner
         echo creating Resource Group $2 in region $location
-        rg_output=$(jq -r .id <<< "$(az group create --name $2 --location $location)")
+        rg_output=$(jq -r .id <<< "$(az group create --name $2 --location $location --tags Environment=$environment App=$app Owner=$owner)")
         subs_id=$(echo $rg_output | cut -d/ -f3)
         # create cannot delete lock for the reosurce group
         # az group lock create --lock-type CanNotDelete -n $2-lock -g $2
