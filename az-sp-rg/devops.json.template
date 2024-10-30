@@ -1,0 +1,31 @@
+{
+    "data": {
+      "subscriptionId": "${SUBSCRIPTION_ID}",
+      "subscriptionName": "${SUBSCRIPTION_NAME}",
+      "environment": "AzureCloud",
+      "scopeLevel": "Subscription",
+      "creationMode": "Manual"
+    },
+    "name": "${SC_NAME}",
+    "type": "azurerm",
+    "url": "https://management.azure.com/",
+    "authorization": {
+      "scheme": "WorkloadIdentityFederation",
+      "parameters": {
+        "tenantid": "${TENANT_ID}",
+        "serviceprincipalid": "${SP_ID}"
+      }
+    },
+    "isShared": false,
+    "isReady": true,
+    "serviceEndpointProjectReferences": [
+      {
+        "projectReference": {
+          "id": "${project_id}",
+          "name": "${ADO_PROJECT}"
+        },
+        "name": "${SC_NAME}",
+        "description": "${sp_name}"
+      }
+    ]
+  }
