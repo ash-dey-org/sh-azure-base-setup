@@ -73,9 +73,9 @@ if [[ $(az ad sp list --display-name $1) != '[]' ]]
 fi
 
 
-fc_name_plan="fc-$2-plan"
-fc_name_apply="fc-$2-apply"
-fc_desc="Terraform Federated credential for SP $1"
+fc_name_plan="fc-$2-tf-plan"
+fc_name_apply="fc-$2-tf-apply"
+fc_desc="Federated credential for Terraform for RG $2"
 issuer="https://app.terraform.io"
 subject_plan="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:plan"
 subject_apply="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:apply"
