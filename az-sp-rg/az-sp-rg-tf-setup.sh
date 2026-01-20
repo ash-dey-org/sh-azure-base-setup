@@ -13,7 +13,7 @@ if [ $# -ne 4 ]; then
     echo "creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
     echo
     echo "1. Display name of the Azure service principal (e.g. tf-<env>-sp-<app>-<VS-AD>)"
-    echo "2. Name of the Azure resource group (e.g. IT-DEV-XXX-RG)"
+    echo "2. Name of the Azure resource group (e.g. IT-DEV-XXX-rg)"
     echo "3. Terraform cloud app-project name (e.g. prj-xxx-xxx)"
     echo "4. Terraform cloud app-workspace name (e.g. xxx-xxx-dev)"
     echo
