@@ -9,10 +9,10 @@ if [ $# -ne 4 ]; then
     echo "Usage : $0 SP_name RG_name tfc_prj_name tfc_workspace_name"
     echo
     echo "Assumption: environment variable TF_CLOUD_ORGANIZATION is avilable"
-    echo "This script requires 4 arguments"
+    echo "This script requires 4 arguments and a few other inputs e.g. RG location, mandatory tags etc""
     echo "creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
     echo
-    echo "1. Display name of the Azure service principal (e.g. tf-np-sp-xxx-VS-AD)"
+    echo "1. Display name of the Azure service principal (e.g. tf-<env>-sp-<app>-<VS-AD>)"
     echo "2. Name of the Azure resource group (e.g. IT-DEV-XXX-RG)"
     echo "3. Terraform cloud app-project name (e.g. prj-xxx-xxx)"
     echo "4. Terraform cloud app-workspace name (e.g. xxx-xxx-dev)"
@@ -38,9 +38,9 @@ if [ $(az group exists --name $2) = true ]
     else
         echo "Resource Group $2 does not exist"
         read -p "Enter the Azure region (AustraliaEast|AustraliaSouthEast) to create resource group: " location
-        read -p "Enter the tag for Environment: " environment
+        read -p "Enter the tag for Environment (dev|test|uat|prod|bcp-prod): " environment
         read -p "Enter the tag for App name: " app
-        read -p "Enter the tag for Owner: " owner
+        read -p "Enter the tag for Owner (IT Infra team): " owner
         echo creating Resource Group $2 in region $location
         rg_output=$(jq -r .id <<< "$(az group create --name $2 --location $location --tags Environment=$environment App=$app Owner=$owner)")
         subs_id=$(echo $rg_output | cut -d/ -f3)
