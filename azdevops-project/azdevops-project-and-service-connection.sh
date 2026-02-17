@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# to fix - probab;y won't work using cli
+
 set -euo pipefail
 
 echo "======================================================"
