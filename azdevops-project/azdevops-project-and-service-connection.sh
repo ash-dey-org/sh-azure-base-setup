@@ -1,35 +1,8 @@
 #!/usr/bin/env bash
-# to fix - probab;y won't work using cli
 
 set -euo pipefail
 
-echo "======================================================"
-echo " Azure DevOps Project & Permissions Bootstrap Script"
-echo "======================================================"
-echo
-echo "This script will:"
-echo "  - Create an Azure DevOps project (if it does not already exist)"
-echo "  - Create an Administrator Team"
-echo "  - Add the Admin team to Project Administrators"
-echo "  - Add the default Project Team to Contributors"
-echo "  - Check for existing project and skip creation if found"
-echo "  - Create federated credentials for Azure AD apps using workload identity"
-echo "  - Accept all required values as command-line arguments (no interactive prompts)"
-echo "  - Support creation of multiple federated credentials for different app services"
-echo
-echo "Usage: $0 <project_name> <tenant_id> <subscription_id> <subscription_name> <app_service_name1> [<app_service_name2> ...]"
-echo
-echo "Required environment variables:"
-echo "  ORG_URL   -> Azure DevOps organization URL"
-echo "              e.g. https://dev.azure.com/myorg"
-echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
-echo
-echo "Prerequisites:"
-echo "  - Azure CLI logged in (az login)"
-echo "  - azure-devops extension installed"
-echo "  - jq installed"
-echo "------------------------------------------------------"
-echo
+
 
 # -----------------------------
 # Validate environment variables
@@ -44,29 +17,68 @@ if [[ -z "${AZDO_PAT:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "${ORG_ID:-}" ]]; then
+  echo "❌ ERROR: ORG_ID environment variable is not set"
+  exit 1
+fi
+
 export AZURE_DEVOPS_EXT_PAT="$AZDO_PAT"
 
 # -----------------------------
-# Parse arguments
+# Parse arguments and extract Azure context
 # -----------------------------
-if [[ $# -lt 5 ]]; then
-  echo "Usage: $0 <project_name> <tenant_id> <subscription_id> <subscription_name> <app_service_name1>"
+if [[ $# -lt 2 ]]; then
+  echo "Usage: $0 <project_name> <app_service_name1>"
+  echo
+  echo "=========================================================================="
+  echo " Azure DevOps Project, Permissions and Service Connection Bootstrap Script"
+  echo "=========================================================================="
+  echo
+  echo "This script will:"
+  echo "  - Create an Azure DevOps project (if it does not already exist)"
+  echo "  - Create an Administrator Team and add to Project Administrators"
+  echo "  - Add the default Project Team to Contributors"
+  echo "  - Check for existing project and skip creation if found"
+  echo "  - Create federated credentials for Azure AD apps using workload identity"
+  echo "  - Dynamically generate service connection using JSON files with runtime values (no hardcoded secrets)"
+  echo "  - Accept only project name and app service name as command-line arguments (no interactive prompts except project description/confirmation)"
+  echo "  - Remove the JSON files after use"
+  echo
+  echo "Usage: $0 <devops_project_name> <app_service_name>"
+  echo
+  echo "Required environment variables:"
+  echo "  ORG_URL   -> Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
+  echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
+  echo "  ORG_ID    -> Azure DevOps organization ID. It can be retrived from below url"
+  echo "               https://dev.azure.com/{your_organization}/_apis/projects/{your_project}?api-version=7.2-preview"
+  echo
+  echo "Prerequisites:"
+  echo "  - Azure CLI logged in (az login)"
+  echo "  - azure-devops extension installed (az extension add --name azure-devops)"
+  echo "  - jq installed (sudo apt install jq)"
+  echo "------------------------------------------------------"
+  echo
   exit 1
 fi
 
 PROJECT_NAME="$1"
-TENANT_ID="$2"
-SUBSCRIPTION_ID="$3"
-SUBSCRIPTION_NAME="$4"
-APP_SERVICE_NAME="$5"
+APP_SERVICE_NAME="$2"
+
+# Extract Azure context automatically
+TENANT_ID=$(az account show --query tenantId -o tsv)
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+SUBSCRIPTION_NAME=$(az account show --query name -o tsv)
+if [[ -z "$TENANT_ID" || -z "$SUBSCRIPTION_ID" || -z "$SUBSCRIPTION_NAME" ]]; then
+  echo "❌ ERROR: Failed to extract Azure context (tenantId, subscriptionId, subscriptionName) from az CLI. Ensure you are logged in."
+  exit 1
+fi
 
 # Check if project already exists
 PROJECT_EXISTS=$(az devops project show --project "$PROJECT_NAME" --organization "$ORG_URL" --output json 2>/dev/null | jq -r '.id // empty')
-# PROJECT_EXISTS=$(az devops project show --project "$PROJECT_NAME" --organization "$ORG_URL")
-# echo $PROJECT_EXISTS
 
 if [[ -n "$PROJECT_EXISTS" ]]; then
   echo "✔ Project '$PROJECT_NAME' already exists. Skipping project creation."
+  PROJECT_ID="$PROJECT_EXISTS"
 else
   read -rp "Enter Project Description: " PROJECT_DESC
   if [[ -z "$PROJECT_DESC" ]]; then
@@ -179,24 +191,29 @@ fi
 # Service Connection Setup (Federated Identity)
 # -----------------------------
 
-# APP_SERVICE_NAME="${APP_SERVICE_NAMES[0]}"
 echo
 echo "--- Federated Credential Creation for '$APP_SERVICE_NAME' ---"
-# Resolve OBJECT_ID from APP_SERVICE_NAME
-OBJECT_ID=$(jq -r .[].appId <<< "$(az ad sp list --display-name "$APP_SERVICE_NAME")")
-if [[ -z "$OBJECT_ID" ]]; then
-  echo "❌ ERROR: Could not resolve OBJECT_ID for app service name '$APP_SERVICE_NAME'"
+# Resolve APP_ID from APP_SERVICE_NAME
+APP_ID=$(jq -r .[].appId <<< "$(az ad sp list --display-name "$APP_SERVICE_NAME")")
+if [[ -z "$APP_ID" ]]; then
+  echo "❌ ERROR: Could not resolve APP_ID for app service name '$APP_SERVICE_NAME'"
   exit 1
 fi
 
 FEDERATED_CREDENTIAL_NAME="azdo-federated-cred-$APP_SERVICE_NAME"
-ISSUER="https://vstoken.dev.azure.com/167b8081-a938-405a-99e0-41cba4a4deee"
+# Dynamically get Azure DevOps org ID from project metadata (collection.href)
+# ORG_ID=$(curl -s -H "Authorization: Basic $(echo -n :$AZDO_PAT | base64)" "${ORG_URL%/}/_apis/projects/$PROJECT_NAME?api-version=7.2-preview" | jq -r '.collection.href | capture("/projectCollections/(?<orgid>[^/]+)") | .orgid')
+if [[ -z "$ORG_ID" || "$ORG_ID" == "null" ]]; then
+  echo "❌ ERROR: Could not retrieve Azure DevOps organization ID from project metadata ($ORG_URL, $PROJECT_NAME)"
+  exit 1
+fi
+ISSUER="https://vstoken.dev.azure.com/$ORG_ID"
 ORG_NAME=$(basename "$ORG_URL")
-SERVICE_CONNECTION_NAME="azdo-service-conn-$APP_SERVICE_NAME"
+SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
 SUBJECT="sc://$ORG_NAME/$PROJECT_NAME/$SERVICE_CONNECTION_NAME"
 
 # Check if federated credential already exists
-json_array=$(az ad app federated-credential list --id "$OBJECT_ID")
+json_array=$(az ad app federated-credential list --id "$APP_ID")
 fc_id_plan=$(echo "$json_array" | jq --arg fc_name_plan "$FEDERATED_CREDENTIAL_NAME" '.[] | select(.name == $fc_name_plan) | .name')
 if [[ $fc_id_plan != "\"$FEDERATED_CREDENTIAL_NAME\"" ]]; then
   echo "Creating federated credential $FEDERATED_CREDENTIAL_NAME"
@@ -209,8 +226,7 @@ if [[ $fc_id_plan != "\"$FEDERATED_CREDENTIAL_NAME\"" ]]; then
   "audiences": ["api://AzureADTokenExchange"]
 }
 EOF
-  az ad app federated-credential create --id "$OBJECT_ID" --parameters credential.json
-  echo "Federated credential created."
+  az ad app federated-credential create --id "$APP_ID" --parameters credential.json
   echo "Federated credential for '$APP_SERVICE_NAME' created in Azure AD app."
   rm -f credential.json
 else
@@ -223,9 +239,49 @@ fi
 
 echo
 echo "--- Setting up Azure DevOps Service Connection for Azure Resource Manager ---"
+
+# -----------------------------
+# Generate ServiceConnectionGeneric.json dynamically
+# -----------------------------
+
+SERVICE_CONNECTION_GENERIC_JSON="ServiceConnectionGeneric.json"
+
+cat > "$SERVICE_CONNECTION_GENERIC_JSON" <<EOF
+{
+  "data": {
+    "subscriptionId": "$SUBSCRIPTION_ID",
+    "subscriptionName": "$SUBSCRIPTION_NAME",
+    "environment": "AzureCloud",
+    "scopeLevel": "Subscription",
+    "creationMode": "Manual"
+  },
+  "name": "$SERVICE_CONNECTION_NAME",
+  "type": "AzureRM",
+  "url": "https://management.azure.com/",
+  "authorization": {
+    "parameters": {
+      "tenantid": "$TENANT_ID",
+      "serviceprincipalid": "$APP_ID"
+    },
+    "scheme": "WorkloadIdentityFederation"
+  },
+  "isShared": false,
+  "isReady": true,
+  "serviceEndpointProjectReferences": [
+    {
+      "projectReference": {
+        "id": "$PROJECT_ID",
+        "name": "$PROJECT_NAME"
+      },
+      "name": "$SERVICE_CONNECTION_NAME"
+    }
+  ]
+}
+EOF
+
 sleep 10 # Sleep to ensure federated credential is fully propagated in Azure AD before creating service connection
 
-SERVICE_CONNECTION_NAME="azdo-service-conn-$APP_SERVICE_NAME"
+SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
 
 echo
 echo "--- Creating Azure DevOps Service Connection for Azure Resource Manager (Federated Identity, REST API) ---"
@@ -237,7 +293,7 @@ cat > service-connection.json <<EOF
     "subscriptionId": "$SUBSCRIPTION_ID",
     "subscriptionName": "$SUBSCRIPTION_NAME",
     "tenantId": "$TENANT_ID",
-    "servicePrincipalId": "$OBJECT_ID",
+    "servicePrincipalId": "$APP_ID",
     "authenticationType": "federated"
   },
   "name": "$SERVICE_CONNECTION_NAME",
@@ -245,7 +301,7 @@ cat > service-connection.json <<EOF
   "authorization": {
     "scheme": "Federated",
     "parameters": {
-      "servicePrincipalId": "$OBJECT_ID",
+      "servicePrincipalId": "$APP_ID",
       "tenantId": "$TENANT_ID",
       "subscriptionId": "$SUBSCRIPTION_ID"
     }
@@ -253,23 +309,21 @@ cat > service-connection.json <<EOF
 }
 EOF
 
-SERVICE_CONNECTION_URL="${ORG_URL%/}/$PROJECT_NAME/_apis/serviceendpoint/endpoints?api-version=7.1-preview.4"
-echo "[Diagnostics] ORG_URL: $ORG_URL"
-echo "[Diagnostics] PROJECT_NAME: $PROJECT_NAME"
-echo "[Diagnostics] SERVICE_CONNECTION_URL: $SERVICE_CONNECTION_URL"
-echo "[Diagnostics] AZDO_PAT (length): ${#AZDO_PAT}"
-echo "[Diagnostics] service-connection.json contents:"
-cat service-connection.json
-
-RESPONSE=$(curl -v -X POST "$SERVICE_CONNECTION_URL" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Basic $(echo -n :$AZDO_PAT | base64)" \
-  --data-binary @service-connection.json)
-
-if echo "$RESPONSE" | grep -q 'id'; then
-  echo "Service connection '$SERVICE_CONNECTION_NAME' created in Azure DevOps project '$PROJECT_NAME'."
+# Create service connection using az cli with the generated JSON
+echo "▶ Creating Azure DevOps service connection from ServiceConnectionGeneric.json..."
+SERVICE_CONN_OUTPUT=$(az devops service-endpoint create --service-endpoint-configuration ./ServiceConnectionGeneric.json --organization "$ORG_URL" --project "$PROJECT_NAME" 2>&1)
+EXIT_CODE=$?
+if [[ $EXIT_CODE -ne 0 ]]; then
+  echo "❌ ERROR: Failed to create service connection. Output:"
+  echo "$SERVICE_CONN_OUTPUT"
+  rm -f "$SERVICE_CONNECTION_GENERIC_JSON"
+  exit $EXIT_CODE
 else
-  echo "Failed to create service connection. Response: $RESPONSE"
+  echo "✔ Service connection created successfully."
 fi
-
-rm -f service-connection.json
+# Remove ServiceConnectionGeneric.json after use
+if rm -f "$SERVICE_CONNECTION_GENERIC_JSON"; then
+  echo "✔ ServiceConnectionGeneric.json deleted."
+else
+  echo "⚠️ WARNING: Failed to delete ServiceConnectionGeneric.json. Please remove manually."
+fi
