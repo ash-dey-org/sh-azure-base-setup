@@ -286,29 +286,6 @@ SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
 echo
 echo "--- Creating Azure DevOps Service Connection for Azure Resource Manager (Federated Identity, REST API) ---"
 
-# Prepare service connection payload
-cat > service-connection.json <<EOF
-{
-  "data": {
-    "subscriptionId": "$SUBSCRIPTION_ID",
-    "subscriptionName": "$SUBSCRIPTION_NAME",
-    "tenantId": "$TENANT_ID",
-    "servicePrincipalId": "$APP_ID",
-    "authenticationType": "federated"
-  },
-  "name": "$SERVICE_CONNECTION_NAME",
-  "type": "azurerm",
-  "authorization": {
-    "scheme": "Federated",
-    "parameters": {
-      "servicePrincipalId": "$APP_ID",
-      "tenantId": "$TENANT_ID",
-      "subscriptionId": "$SUBSCRIPTION_ID"
-    }
-  }
-}
-EOF
-
 # Create service connection using az cli with the generated JSON
 echo "▶ Creating Azure DevOps service connection from ServiceConnectionGeneric.json..."
 SERVICE_CONN_OUTPUT=$(az devops service-endpoint create --service-endpoint-configuration ./ServiceConnectionGeneric.json --organization "$ORG_URL" --project "$PROJECT_NAME" 2>&1)
