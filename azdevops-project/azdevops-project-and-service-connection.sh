@@ -188,52 +188,6 @@ else
 fi
 
 # -----------------------------
-# Service Connection Setup (Federated Identity)
-# -----------------------------
-
-echo
-echo "--- Federated Credential Creation for '$APP_SERVICE_NAME' ---"
-# Resolve APP_ID from APP_SERVICE_NAME
-APP_ID=$(jq -r .[].appId <<< "$(az ad sp list --display-name "$APP_SERVICE_NAME")")
-if [[ -z "$APP_ID" ]]; then
-  echo "❌ ERROR: Could not resolve APP_ID for app service name '$APP_SERVICE_NAME'"
-  exit 1
-fi
-
-FEDERATED_CREDENTIAL_NAME="azdo-federated-cred-$APP_SERVICE_NAME"
-# Dynamically get Azure DevOps org ID from project metadata (collection.href)
-# ORG_ID=$(curl -s -H "Authorization: Basic $(echo -n :$AZDO_PAT | base64)" "${ORG_URL%/}/_apis/projects/$PROJECT_NAME?api-version=7.2-preview" | jq -r '.collection.href | capture("/projectCollections/(?<orgid>[^/]+)") | .orgid')
-if [[ -z "$ORG_ID" || "$ORG_ID" == "null" ]]; then
-  echo "❌ ERROR: Could not retrieve Azure DevOps organization ID from project metadata ($ORG_URL, $PROJECT_NAME)"
-  exit 1
-fi
-ISSUER="https://vstoken.dev.azure.com/$ORG_ID"
-ORG_NAME=$(basename "$ORG_URL")
-SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
-SUBJECT="sc://$ORG_NAME/$PROJECT_NAME/$SERVICE_CONNECTION_NAME"
-
-# Check if federated credential already exists
-json_array=$(az ad app federated-credential list --id "$APP_ID")
-fc_id_plan=$(echo "$json_array" | jq --arg fc_name_plan "$FEDERATED_CREDENTIAL_NAME" '.[] | select(.name == $fc_name_plan) | .name')
-if [[ $fc_id_plan != "\"$FEDERATED_CREDENTIAL_NAME\"" ]]; then
-  echo "Creating federated credential $FEDERATED_CREDENTIAL_NAME"
-  cat > credential.json <<EOF
-{
-  "name": "$FEDERATED_CREDENTIAL_NAME",
-  "issuer": "$ISSUER",
-  "subject": "$SUBJECT",
-  "description": "Federated credential for Azure DevOps pipeline",
-  "audiences": ["api://AzureADTokenExchange"]
-}
-EOF
-  az ad app federated-credential create --id "$APP_ID" --parameters credential.json
-  echo "Federated credential for '$APP_SERVICE_NAME' created in Azure AD app."
-  rm -f credential.json
-else
-  echo "Federated Credential $FEDERATED_CREDENTIAL_NAME exists, skipping step...."
-fi
-
-# -----------------------------
 # Azure DevOps Service Connection (Azure Resource Manager)
 # -----------------------------
 
@@ -245,6 +199,8 @@ echo "--- Setting up Azure DevOps Service Connection for Azure Resource Manager 
 # -----------------------------
 
 SERVICE_CONNECTION_GENERIC_JSON="ServiceConnectionGeneric.json"
+SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
+APP_ID=$(jq -r .[].appId <<< "$(az ad sp list --display-name "$APP_SERVICE_NAME")")
 
 cat > "$SERVICE_CONNECTION_GENERIC_JSON" <<EOF
 {
@@ -279,28 +235,101 @@ cat > "$SERVICE_CONNECTION_GENERIC_JSON" <<EOF
 }
 EOF
 
-sleep 10 # Sleep to ensure federated credential is fully propagated in Azure AD before creating service connection
-
-SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
 
 echo
 echo "--- Creating Azure DevOps Service Connection for Azure Resource Manager (Federated Identity, REST API) ---"
 
-# Create service connection using az cli with the generated JSON
-echo "▶ Creating Azure DevOps service connection from ServiceConnectionGeneric.json..."
-SERVICE_CONN_OUTPUT=$(az devops service-endpoint create --service-endpoint-configuration ./ServiceConnectionGeneric.json --organization "$ORG_URL" --project "$PROJECT_NAME" 2>&1)
-EXIT_CODE=$?
-if [[ $EXIT_CODE -ne 0 ]]; then
-  echo "❌ ERROR: Failed to create service connection. Output:"
-  echo "$SERVICE_CONN_OUTPUT"
-  rm -f "$SERVICE_CONNECTION_GENERIC_JSON"
-  exit $EXIT_CODE
+SERVICE_CONNECTION_EXISTS=$(az devops service-endpoint list --organization "$ORG_URL" --project "$PROJECT_NAME" --query "[?name=='$SERVICE_CONNECTION_NAME']" -o tsv)
+if [[ -n "$SERVICE_CONNECTION_EXISTS" ]]; then
+  echo "✔ Service connection '$SERVICE_CONNECTION_NAME' already exists. Skipping creation."
+  # Remove ServiceConnectionGeneric.json after use
+  if rm -f "$SERVICE_CONNECTION_GENERIC_JSON"; then
+    echo "✔ ServiceConnectionGeneric.json deleted."
+  else
+    echo "⚠️ WARNING: Failed to delete ServiceConnectionGeneric.json. Please remove manually."
+  fi
 else
-  echo "✔ Service connection created successfully."
+  # Create service connection using az cli with the generated JSON
+  echo "▶ Creating Azure DevOps service connection from ServiceConnectionGeneric.json..."
+  SERVICE_CONN_OUTPUT=$(az devops service-endpoint create --service-endpoint-configuration ./ServiceConnectionGeneric.json --organization "$ORG_URL" --project "$PROJECT_NAME" 2>&1)
+  EXIT_CODE=$?
+  if [[ $EXIT_CODE -ne 0 ]]; then
+    echo "❌ ERROR: Failed to create service connection. Output:"
+    echo "$SERVICE_CONN_OUTPUT"
+    rm -f "$SERVICE_CONNECTION_GENERIC_JSON"
+    exit $EXIT_CODE
+  else
+    echo "✔ Service connection created successfully."
+  fi
+  # Remove ServiceConnectionGeneric.json after use
+  if rm -f "$SERVICE_CONNECTION_GENERIC_JSON"; then
+    echo "✔ ServiceConnectionGeneric.json deleted."
+  else
+    echo "⚠️ WARNING: Failed to delete ServiceConnectionGeneric.json. Please remove manually."
+  fi
 fi
-# Remove ServiceConnectionGeneric.json after use
-if rm -f "$SERVICE_CONNECTION_GENERIC_JSON"; then
-  echo "✔ ServiceConnectionGeneric.json deleted."
+
+# -----------------------------
+# Fetch Service Connection Subject Identifier
+# -----------------------------
+
+SUBJECT_IDENTIFIER=$(az devops service-endpoint list  --organization "$ORG_URL" --project "$PROJECT_NAME"\
+  --query "[?name=='$SERVICE_CONNECTION_NAME'].authorization.parameters.workloadIdentityFederationSubject" \
+  -o tsv)
+
+if [[ -z "$SUBJECT_IDENTIFIER" ]]; then
+  echo "⚠️ WARNING: Subject identifier not found in service connection details. Printing full details for inspection."
+  echo "$SERVICE_CONNECTION_DETAILS" | jq
 else
-  echo "⚠️ WARNING: Failed to delete ServiceConnectionGeneric.json. Please remove manually."
+  echo "✔ Azure DevOps Service Connection Subject Identifier: $SUBJECT_IDENTIFIER"
 fi
+
+
+# -----------------------------
+# Federated Credential Creation
+# -----------------------------
+
+echo
+echo "--- Federated Credential Creation for '$APP_SERVICE_NAME' ---"
+# Resolve APP_ID from APP_SERVICE_NAME
+APP_ID=$(jq -r .[].appId <<< "$(az ad sp list --display-name "$APP_SERVICE_NAME")")
+if [[ -z "$APP_ID" ]]; then
+  echo "❌ ERROR: Could not resolve APP_ID for app service name '$APP_SERVICE_NAME'"
+  exit 1
+fi
+
+FEDERATED_CREDENTIAL_NAME="azdo-federated-cred-$APP_SERVICE_NAME"
+# Dynamically get Azure DevOps org ID from project metadata (collection.href)
+# ORG_ID=$(curl -s -H "Authorization: Basic $(echo -n :$AZDO_PAT | base64)" "${ORG_URL%/}/_apis/projects/$PROJECT_NAME?api-version=7.2-preview" | jq -r '.collection.href | capture("/projectCollections/(?<orgid>[^/]+)") | .orgid')
+if [[ -z "$ORG_ID" || "$ORG_ID" == "null" ]]; then
+  echo "❌ ERROR: Could not retrieve Azure DevOps organization ID from project metadata ($ORG_URL, $PROJECT_NAME)"
+  exit 1
+fi
+ISSUER="https://vstoken.dev.azure.com/$ORG_ID"
+# ORG_NAME=$(basename "$ORG_URL")
+SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
+SUBJECT=$SUBJECT_IDENTIFIER
+
+# Check if federated credential already exists
+json_array=$(az ad app federated-credential list --id "$APP_ID")
+fc_id_plan=$(echo "$json_array" | jq --arg fc_name_plan "$FEDERATED_CREDENTIAL_NAME" '.[] | select(.name == $fc_name_plan) | .name')
+if [[ $fc_id_plan != "\"$FEDERATED_CREDENTIAL_NAME\"" ]]; then
+  echo "Creating federated credential $FEDERATED_CREDENTIAL_NAME"
+  cat > credential.json <<EOF
+{
+  "name": "$FEDERATED_CREDENTIAL_NAME",
+  "issuer": "$ISSUER",
+  "subject": "$SUBJECT",
+  "description": "Federated credential for Azure DevOps pipeline",
+  "audiences": ["api://AzureADTokenExchange"]
+}
+EOF
+  az ad app federated-credential create --id "$APP_ID" --parameters credential.json
+  echo "Federated credential for '$APP_SERVICE_NAME' created in Azure AD app."
+  rm -f credential.json
+else
+  echo "Federated Credential $FEDERATED_CREDENTIAL_NAME exists, skipping step...."
+fi
+...existing code...
+
+
