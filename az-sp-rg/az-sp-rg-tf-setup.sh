@@ -25,6 +25,13 @@ if [ $# -ne 4 ]; then
     exit 0
 fi
 
+# -----------------------------
+# Validate environment variables
+# -----------------------------
+if [[ -z "${TF_CLOUD_ORGANIZATION:-}" ]]; then
+  echo "❌ ERROR: TF_CLOUD_ORGANIZATION environment variable is not set"
+  exit 1
+fi
 
 # check if Resource group exists
 if [ $(az group exists --name $2) = true ]
