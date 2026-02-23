@@ -305,7 +305,7 @@ if [[ -z "$ORG_ID" || "$ORG_ID" == "null" ]]; then
   echo "❌ ERROR: Could not retrieve Azure DevOps organization ID from project metadata ($ORG_URL, $PROJECT_NAME)"
   exit 1
 fi
-ISSUER="https://vstoken.dev.azure.com/$ORG_ID"
+ISSUER="https://login.microsoftonline.com/$TENANT_ID/v2.0"
 # ORG_NAME=$(basename "$ORG_URL")
 SERVICE_CONNECTION_NAME="sc-$APP_SERVICE_NAME"
 SUBJECT=$SUBJECT_IDENTIFIER
