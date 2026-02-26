@@ -1,91 +1,140 @@
 #!/bin/bash
-# Check 4 arguments are passed with the script
 
-## TO DO
-## why role assignment of the RG not lisitng correctly
+set -euo pipefail
 
-if [ $# -ne 4 ]; then
-    clear
-    echo "Usage : $0 SP_name RG_name tfc_prj_name tfc_workspace_name"
-    echo
-    echo "Assumption: environment variable TF_CLOUD_ORGANIZATION is avilable"
-    echo "This script requires 4 arguments and a few other inputs e.g. RG location, mandatory tags etc"
-    echo "creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
-    echo
-    echo "1. Display name of the Azure service principal (e.g. tf-<env>-sp-<app>-<VS-AD>)"
-    echo "2. Name of the Azure resource group (e.g. IT-DEV-XXX-rg)"
-    echo "3. Terraform cloud app-project name (e.g. prj-xxx-xxx)"
-    echo "4. Terraform cloud app-workspace name (e.g. xxx-xxx-dev)"
-    echo
-    echo "if the resource group already exists, it will assign SP contributor role to RG"
-    echo "if the resource group does not exist, then it will create resources and assign permission"
-    echo
-    echo "requires environemnt variable TF_CLOUD_ORGANIZATION"
-    echo "requires default subscription set (az account set --subscription xxxx)"
-    exit 0
+# ------------------------------------------------------------
+# This script:
+#  1) Takes: <sp_name> <rg_name> <tfc_prj_name> <tfc_workspace_name>
+#  2) Creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud
+#  3) Assigns SP owner role to RG if RG exists, else creates RG and assigns permission
+#
+# Requirements:
+#  - bash, jq, az
+#  - Azure CLI logged in and able to query subscription and service principal:
+#      az login
+#      az account show
+#      az ad sp list --display-name ...
+#
+# Required env vars:
+#  - TF_CLOUD_ORGANIZATION
+#
+# Usage:
+#  $0 "<sp_name>" "<rg_name>" "<tfc_prj_name>" "<tfc_workspace_name>"
+# ------------------------------------------------------------
+
+SP_NAME="${1:-}"
+RG_NAME="${2:-}"
+TFC_PRJ_NAME="${3:-}"
+TFC_WORKSPACE_NAME="${4:-}"
+
+if [[ -z "${SP_NAME}" || -z "${RG_NAME}" || -z "${TFC_PRJ_NAME}" || -z "${TFC_WORKSPACE_NAME}" ]]; then
+    echo ""
+    echo "------------------------------------------------------------"
+    echo "This script:"
+    echo "  1) Takes: <sp_name> <rg_name> <tfc_prj_name> <tfc_workspace_name>"
+    echo "  2) Creates az RG, creates aad SP, assigns permission, creates federated credentials for Terraform Cloud"
+    echo "  3) Assigns SP owner role to RG if RG exists, else creates RG and assigns permission"
+    echo ""
+    echo "Requirements:"
+    echo "  - bash, jq, az"
+    echo "  - Azure CLI logged in and able to query subscription and service principal:"
+    echo "      az login"
+    echo "      az account show"
+    echo "      az ad sp list --display-name ..."
+    echo ""
+    echo "Required env vars:"
+    echo "  - TF_CLOUD_ORGANIZATION"
+    echo ""
+    echo "Usage:"
+    echo "  $0 \"<sp_name>\" \"<rg_name>\" \"<tfc_prj_name>\" \"<tfc_workspace_name>\""
+    echo "------------------------------------------------------------"
+    exit 2
 fi
 
-# -----------------------------
-# Validate environment variables
-# -----------------------------
-if [[ -z "${TF_CLOUD_ORGANIZATION:-}" ]]; then
-  echo "❌ ERROR: TF_CLOUD_ORGANIZATION environment variable is not set"
-  exit 1
-fi
+: "${TF_CLOUD_ORGANIZATION:?Environment variable must be set before running the script}"
+
+need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required software: $1" >&2; exit 3; }; }
+need_cmd jq
+need_cmd az
 
 # check if Resource group exists
-if [ $(az group exists --name $2) = true ]
+if [ $(az group exists --name $RG_NAME) = true ]
 
     then
-        echo Resource Group $2 already exists
+        echo Resource Group $RG_NAME already exists
         # echo "Extracting subscription id"
         subs_id=$(jq -r .id <<< "$(az account show)")
 
 # create resource group
     else
-        echo "Resource Group $2 does not exist"
+        echo "Resource Group $RG_NAME does not exist"
         read -p "Enter the Azure region (AustraliaEast|AustraliaSouthEast) to create resource group: " location
         read -p "Enter the tag for Environment (dev|test|uat|prod|bcp-prod): " environment
         read -p "Enter the tag for App name: " app
         read -p "Enter the tag for Owner (IT Infra team): " owner
-        echo creating Resource Group $2 in region $location
-        rg_output=$(jq -r .id <<< "$(az group create --name $2 --location $location --tags Environment=$environment App=$app Owner=$owner)")
+        echo creating Resource Group $RG_NAME in region $location
+        rg_output=$(jq -r .id <<< "$(az group create --name $RG_NAME --location $location --tags Environment=$environment App=$app Owner=$owner)")
         subs_id=$(echo $rg_output | cut -d/ -f3)
         # create cannot delete lock for the reosurce group
-        # az group lock create --lock-type CanNotDelete -n $2-lock -g $2
+        # az group lock create --lock-type CanNotDelete -n $RG_NAME-lock -g $RG_NAME
 fi
+
+
+# Function to ensure all required roles are assigned to a service principal
+assign_roles_to_sp() {
+    local appId="$1"
+    local subs_id="$2"
+    local rg_name="$3"
+    local roles=("Owner" "App Configuration Data Owner" "Key Vault Secrets Officer")
+    declare -A role_assigned
+    for role in "${roles[@]}"; do
+        assigned=$(az role assignment list --resource-group "$rg_name" --assignee "$appId" --role "$role" | jq -r '.[].roleDefinitionName')
+        if [[ $assigned == "$role" ]]; then
+            role_assigned[$role]=true
+        else
+            role_assigned[$role]=false
+        fi
+    done
+    all_roles_assigned=true
+    for role in "${roles[@]}"; do
+        if [[ ${role_assigned[$role]} == false ]]; then
+            all_roles_assigned=false
+            break
+        fi
+    done
+    if $all_roles_assigned; then
+        echo "All required roles already assigned"
+    else
+        echo "Assigning missing roles to service principal"
+        for role in "${roles[@]}"; do
+            if [[ ${role_assigned[$role]} == false ]]; then
+                echo "Assigning $role role"
+                az role assignment create --assignee "$appId" --role "$role" --scope /subscriptions/$subs_id/resourceGroups/$rg_name
+            fi
+        done
+    fi
+}
 
 # check if service principal exists
-if [[ $(az ad sp list --display-name $1) != '[]' ]]
-# if az ad sp list --display-name $1 | grep -Pq '"displayName":'
-    then
-        echo "Service Principal $1 already exists, checking if role assignment exists"
-        appId=$(jq -r .[].appId <<< "$(az ad sp list --display-name $1)")
-        RGappID=$(jq -r ".[] | select(.principalName==\"$appId\") | .principalName" <<< "$(az role assignment list --resource-group $2)")
-        # echo RG appId $RGappID
-        if [[ $RGappID = $appId ]]
-            then
-                echo "role assignement already exists"
-
-            else
-                echo "role assignement does not exist, creating role assignment"
-                az role assignment create --assignee $appId --role Contributor --scope /subscriptions/$subs_id/resourceGroups/$2
-                # az role assignment list --resource-group $2
-        fi
-
-    else
-        echo "Service Principal $1 does not exist"
-        echo "creating service principal $1 and assigning permission"
-        az ad sp create-for-rbac -n $1 --role Contributor --scopes /subscriptions/$subs_id/resourceGroups/$2
+if [[ $(az ad sp list --display-name $SP_NAME) != '[]' ]]; then
+    echo "Service Principal $SP_NAME already exists, checking if role assignment exists"
+    appId=$(jq -r .[].appId <<< "$(az ad sp list --display-name $SP_NAME)")
+    assign_roles_to_sp "$appId" "$subs_id" "$RG_NAME"
+else
+    echo "Service Principal $SP_NAME does not exist"
+    echo "Creating service principal $SP_NAME"
+    sp_create_output=$(az ad sp create-for-rbac -n $SP_NAME --role Owner --scopes /subscriptions/$subs_id/resourceGroups/$RG_NAME --only-show-errors)
+    appId=$(jq -r .appId <<< "$sp_create_output")
+    assign_roles_to_sp "$appId" "$subs_id" "$RG_NAME"
 fi
 
 
-fc_name_plan="fc-$2-tf-plan"
-fc_name_apply="fc-$2-tf-apply"
-fc_desc="Federated credential for Terraform for RG $2"
+fc_name_plan="fc-$RG_NAME-tf-plan"
+fc_name_apply="fc-$RG_NAME-tf-apply"
+fc_desc="Federated credential for Terraform for RG $RG_NAME"
 issuer="https://app.terraform.io"
-subject_plan="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:plan"
-subject_apply="organization:$TF_CLOUD_ORGANIZATION:project:$3:workspace:$4:run_phase:apply"
+subject_plan="organization:$TF_CLOUD_ORGANIZATION:project:$TFC_PRJ_NAME:workspace:$TFC_WORKSPACE_NAME:run_phase:plan"
+subject_apply="organization:$TF_CLOUD_ORGANIZATION:project:$TFC_PRJ_NAME:workspace:$TFC_WORKSPACE_NAME:run_phase:apply"
 audiences='["api://AzureADTokenExchange"]'
 
 
@@ -113,7 +162,7 @@ apply=$(cat <<EOL
 EOL
 )
 
-objId=$(jq -r .[].appId <<< "$(az ad sp list --display-name $1)")
+objId=$(jq -r .[].appId <<< "$(az ad sp list --display-name $SP_NAME)")
 json_array=$(az ad app federated-credential list --id $objId)
 
 fc_id_plan=$(echo "$json_array" | jq  --arg fc_name_plan "$fc_name_plan" '.[] | select(.name == $fc_name_plan) | .name')

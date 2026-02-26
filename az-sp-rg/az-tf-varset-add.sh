@@ -4,14 +4,14 @@ set -euo pipefail
 # ------------------------------------------------------------
 # This script:
 #  1) Takes: <project_name> <workspace_name> <azure_service_principal_display_name>
-#  2) Appends existing varset "Azure-Tenant-ID-OIDC" to the PROJECT scope (no removal)
+#  2) Appends existing varset "Azure-Tenant-ID-OIDC" to the Terraform project scope (no removal)
 #     - prints current project associations before + after
 #  3) Detects default Azure subscription name and appends the matching existing varset
-#     to the WORKSPACE scope (no removal)
+#     to the Terraform workspace scope (no removal)
 #     - "IT Non-Production" -> "IT-Non-Production-Subscription-ID"
 #     - "IT Production"     -> "IT-Production-Subscription-ID"
 #     - prints current workspace associations before + after
-#  4) Creates/updates a WORKSPACE variable:
+#  4) Creates/updates a Terraform workspace variable:
 #       key         = "IT-Production-Subscription-ID"
 #       value       = Azure SP clientId/appId
 #       category    = "terraform"
@@ -37,13 +37,43 @@ WORKSPACE_NAME="${2:-}"
 SP_NAME="${3:-}"
 
 if [[ -z "${PROJECT_NAME}" || -z "${WORKSPACE_NAME}" || -z "${SP_NAME}" ]]; then
-  echo "Usage: $0 \"<project_name>\" \"<workspace_name>\" \"<azure_service_principal_display_name>\""
+  echo ""
+  echo "------------------------------------------------------------"
+  echo "This script:"
+  echo "  1) Takes: <project_name> <workspace_name> <azure_service_principal_display_name>"
+  echo "  2) Appends existing varset 'Azure-Tenant-ID-OIDC' to the Terraform project scope (no removal)"
+  echo "     - prints current project associations before + after"
+  echo "  3) Detects default Azure subscription name and appends the matching existing varset"
+  echo "     to the Terraform workspace scope (no removal)"
+  echo "     - 'IT Non-Production' -> 'IT-Non-Production-Subscription-ID'"
+  echo "     - 'IT Production'     -> 'IT-Production-Subscription-ID'"
+  echo "     - prints current workspace associations before + after"
+  echo "  4) Creates/updates a Terraform workspace variable:"
+  echo "       key         = 'IT-Production-Subscription-ID'"
+  echo "       value       = Azure SP clientId/appId"
+  echo "       category    = 'terraform'"
+  echo "       sensitive   = true"
+  echo "       description = SP display name"
+  echo ""
+  echo "Requirements:"
+  echo "  - bash, curl, jq, az, python3"
+  echo "  - Azure CLI logged in and able to query subscription and service principal:"
+  echo "      az login"
+  echo "      az account show"
+  echo "      az ad sp list --display-name ..."
+  echo ""
+  echo "Required env vars:"
+  echo "  - TF_CLOUD_ORGANIZATION"
+  echo ""
+  echo "Usage:"
+  echo "  $0 \"<project_name>\" \"<workspace_name>\" \"<sp_display_name>\""
+  echo "------------------------------------------------------------"
   exit 2
 fi
 
-: "${TF_CLOUD_ORGANIZATION:?Must set TF_CLOUD_ORGANIZATION}"
+: "${TF_CLOUD_ORGANIZATION:?Environment variable TF_CLOUD_ORGANIZATION must be set}"
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 3; }; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required software: $1" >&2; exit 3; }; }
 need_cmd curl
 need_cmd jq
 need_cmd az
@@ -62,7 +92,6 @@ if [[ -z "${TF_API_TOKEN}" ]]; then
   exit 2
 fi
 
-# TF_API_TOKEN=$(jq -r '.credentials["app.terraform.io"].token' ~/.terraform.d/credentials.tfrc.json)
 echo "Using Terraform Cloud API token: ${TF_API_TOKEN:0:4}... (length: ${#TF_API_TOKEN})"
 AUTH_HEADER="Authorization: Bearer ${TF_API_TOKEN}"
 
