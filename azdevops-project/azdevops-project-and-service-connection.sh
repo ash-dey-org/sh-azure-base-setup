@@ -5,64 +5,57 @@ set -euo pipefail
 
 
 # -----------------------------
-# Validate environment variables
+# Argument parsing and environment validation
 # -----------------------------
+PROJECT_NAME="${1:-}"
+APP_SERVICE_NAME="${2:-}"
+
+if [[ -z "${PROJECT_NAME}" || -z "${APP_SERVICE_NAME}" ]]; then
+    echo ""
+    echo "------------------------------------------------------"
+    echo " Azure DevOps Project, Permissions and Service Connection Bootstrap Script"
+    echo "------------------------------------------------------"
+    echo "Usage: $0 <devops_project_name> <app_service_name>"
+    echo ""
+    echo "This script will:"
+    echo "  - Create an Azure DevOps project (if it does not already exist)"
+    echo "  - Create an Administrator Team and add to Project Administrators"
+    echo "  - Add the default Project Team to Contributors"
+    echo "  - Check for existing project and skip creation if found"
+    echo "  - Create federated credentials for Azure AD apps using workload identity"
+    echo "  - Dynamically generate service connection using JSON files with runtime values (no hardcoded secrets)"
+    echo "  - Accept only project name and app service name as command-line arguments (no interactive prompts except project description/confirmation)"
+    echo "  - Remove the JSON files after use"
+    echo ""
+    echo "Required environment variables:"
+    echo "  ORG_URL   -> Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
+    echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
+    echo "  ORG_ID    -> Azure DevOps organization ID. It can be retrieved from:"
+    echo "               https://dev.azure.com/{your_organization}/_apis/projects/{your_project}?api-version=7.2-preview"
+    echo ""
+    echo "Prerequisites:"
+    echo "  - Azure CLI logged in (az login) with permission to modify app services and create federated credentials"
+    echo "  - azure-devops extension installed (az extension add --name azure-devops)"
+    echo "  - jq installed (sudo apt install jq)"
+    echo "------------------------------------------------------"
+    echo ""
+    exit 1
+fi
+
 if [[ -z "${ORG_URL:-}" ]]; then
-  echo "❌ ERROR: ORG_URL environment variable is not set"
-  exit 1
+    echo "❌ ERROR: ORG_URL environment variable is not set"
+    exit 1
 fi
-
 if [[ -z "${AZDO_PAT:-}" ]]; then
-  echo "❌ ERROR: AZDO_PAT environment variable is not set"
-  exit 1
+    echo "❌ ERROR: AZDO_PAT environment variable is not set"
+    exit 1
 fi
-
 if [[ -z "${ORG_ID:-}" ]]; then
-  echo "❌ ERROR: ORG_ID environment variable is not set"
-  exit 1
+    echo "❌ ERROR: ORG_ID environment variable is not set"
+    exit 1
 fi
 
 export AZURE_DEVOPS_EXT_PAT="$AZDO_PAT"
-
-# -----------------------------
-# Parse arguments and extract Azure context
-# -----------------------------
-if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <project_name> <app_service_name1>"
-  echo
-  echo "=========================================================================="
-  echo " Azure DevOps Project, Permissions and Service Connection Bootstrap Script"
-  echo "=========================================================================="
-  echo
-  echo "This script will:"
-  echo "  - Create an Azure DevOps project (if it does not already exist)"
-  echo "  - Create an Administrator Team and add to Project Administrators"
-  echo "  - Add the default Project Team to Contributors"
-  echo "  - Check for existing project and skip creation if found"
-  echo "  - Create federated credentials for Azure AD apps using workload identity"
-  echo "  - Dynamically generate service connection using JSON files with runtime values (no hardcoded secrets)"
-  echo "  - Accept only project name and app service name as command-line arguments (no interactive prompts except project description/confirmation)"
-  echo "  - Remove the JSON files after use"
-  echo
-  echo "Usage: $0 <devops_project_name> <app_service_name>"
-  echo
-  echo "Required environment variables:"
-  echo "  ORG_URL   -> Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
-  echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
-  echo "  ORG_ID    -> Azure DevOps organization ID. It can be retrived from below url"
-  echo "               https://dev.azure.com/{your_organization}/_apis/projects/{your_project}?api-version=7.2-preview"
-  echo
-  echo "Prerequisites:"
-  echo "  - Azure CLI logged in (az login)"
-  echo "  - azure-devops extension installed (az extension add --name azure-devops)"
-  echo "  - jq installed (sudo apt install jq)"
-  echo "------------------------------------------------------"
-  echo
-  exit 1
-fi
-
-PROJECT_NAME="$1"
-APP_SERVICE_NAME="$2"
 
 # Extract Azure context automatically
 TENANT_ID=$(az account show --query tenantId -o tsv)
