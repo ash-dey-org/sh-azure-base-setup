@@ -8,6 +8,8 @@
 
 if [ $# -ne 3 ]; then
     clear
+    echo "THIS IS OLD SCRIPT, PLEASE USE azdevops-project-and-service-connection.sh INSTEAD"
+    echo "------------------------------------------------------"
     echo "Usage : $0 entra_sp_name Azure_resource_group_name azure_devops_project_name"
     echo
     echo "This script requires 3 arguments"

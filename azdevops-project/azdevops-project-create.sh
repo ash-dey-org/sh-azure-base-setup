@@ -1,38 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "======================================================"
-echo " Azure DevOps Project & Permissions Bootstrap Script"
-echo "======================================================"
-echo
-echo "This script will:"
-echo "  - Create an Azure DevOps project"
-echo "  - Create an Administrator Team"
-echo "  - Add the Admin team to Project Administrators"
-echo "  - Add the default Project Team to Contributors"
-echo
-echo "Required environment variables:"
-echo "  ORG_URL   -> Azure DevOps organization URL"
-echo "              e.g. https://dev.azure.com/myorg"
-echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
-echo
-echo "Prerequisites:"
-echo "  - Azure CLI logged in (az login)"
-echo "  - azure-devops extension installed"
-echo "  - jq installed"
-echo "------------------------------------------------------"
-echo
+if [[ -z "${ORG_URL:-}" || -z "${AZDO_PAT:-}" ]]; then
+  clear
+  echo "THIS IS OLD SCRIPT, PLEASE USE azdevops-project-and-service-connection.sh INSTEAD"
+  echo "------------------------------------------------------"
+  echo ""
+  echo "======================================================"
+  echo " Azure DevOps Project & Permissions Bootstrap Script"
+  echo "======================================================"
+  echo
+  echo "This script will:"
+  echo "  - Create an Azure DevOps project"
+  echo "  - Create an Administrator Team"
+  echo "  - Add the Admin team to Project Administrators"
+  echo "  - Add the default Project Team to Contributors"
+  echo
+  echo "Required environment variables:"
+  echo "  ORG_URL   -> Azure DevOps organization URL"
+  echo "              e.g. https://dev.azure.com/myorg"
+  echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
+  echo
+  echo "Prerequisites:"
+  echo "  - Azure CLI logged in (az login)"
+  echo "  - azure-devops extension installed"
+  echo "  - jq installed"
+  echo "------------------------------------------------------"
+  echo
+  exit 0
+fi
 
 # -----------------------------
 # Validate environment variables
 # -----------------------------
 if [[ -z "${ORG_URL:-}" ]]; then
-  echo "❌ ERROR: ORG_URL environment variable is not set"
+  echo "❌ ERROR: ORG_URL Azure DevOps organization URL environment variable is not set"
   exit 1
 fi
 
 if [[ -z "${AZDO_PAT:-}" ]]; then
-  echo "❌ ERROR: AZDO_PAT environment variable is not set"
+  echo "❌ ERROR: AZDO_PAT Azure DevOps Personal Access Token environment variable is not set"
   exit 1
 fi
 

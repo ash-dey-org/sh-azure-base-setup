@@ -37,6 +37,7 @@ WORKSPACE_NAME="${2:-}"
 SP_NAME="${3:-}"
 
 if [[ -z "${PROJECT_NAME}" || -z "${WORKSPACE_NAME}" || -z "${SP_NAME}" ]]; then
+  clear
   echo ""
   echo "------------------------------------------------------------"
   echo "This script:"
@@ -49,7 +50,7 @@ if [[ -z "${PROJECT_NAME}" || -z "${WORKSPACE_NAME}" || -z "${SP_NAME}" ]]; then
   echo "     - 'IT Production'     -> 'IT-Production-Subscription-ID'"
   echo "     - prints current workspace associations before + after"
   echo "  4) Creates/updates a Terraform workspace variable:"
-  echo "       key         = 'IT-Production-Subscription-ID'"
+  echo "       key         = 'TFC_AZURE_RUN_CLIENT_ID'"
   echo "       value       = Azure SP clientId/appId"
   echo "       category    = 'terraform'"
   echo "       sensitive   = true"
@@ -59,6 +60,7 @@ if [[ -z "${PROJECT_NAME}" || -z "${WORKSPACE_NAME}" || -z "${SP_NAME}" ]]; then
   echo "  - bash, curl, jq, az, python3"
   echo "  - Azure CLI logged in and able to query subscription and service principal:"
   echo "      az login"
+  echo "      az account set --subscription \"<subscription_name>\""
   echo "      az account show"
   echo "      az ad sp list --display-name ..."
   echo ""

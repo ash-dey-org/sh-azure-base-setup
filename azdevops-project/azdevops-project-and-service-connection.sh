@@ -11,6 +11,7 @@ PROJECT_NAME="${1:-}"
 APP_SERVICE_NAME="${2:-}"
 
 if [[ -z "${PROJECT_NAME}" || -z "${APP_SERVICE_NAME}" ]]; then
+    clear
     echo ""
     echo "------------------------------------------------------"
     echo " Azure DevOps Project, Permissions and Service Connection Bootstrap Script"
@@ -30,11 +31,12 @@ if [[ -z "${PROJECT_NAME}" || -z "${APP_SERVICE_NAME}" ]]; then
     echo "Required environment variables:"
     echo "  ORG_URL   -> Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
     echo "  AZDO_PAT  -> Azure DevOps Personal Access Token"
-    echo "  ORG_ID    -> Azure DevOps organization ID. It can be retrieved from:"
-    echo "               https://dev.azure.com/{your_organization}/_apis/projects/{your_project}?api-version=7.2-preview"
+    echo "  ORG_ID    -> Azure DevOps organization ID. It can be retrieved from the GUID value of \"collection\" from:"
+    echo "               https://dev.azure.com/{your_organization}/_apis/projects/{your_project}"
     echo ""
     echo "Prerequisites:"
     echo "  - Azure CLI logged in (az login) with permission to modify app services and create federated credentials"
+    echo "  - Default Azure CLI subscription context set containing the app service/RG (az account set --subscription \"<subscription_name>\")"
     echo "  - azure-devops extension installed (az extension add --name azure-devops)"
     echo "  - jq installed (sudo apt install jq)"
     echo "------------------------------------------------------"
